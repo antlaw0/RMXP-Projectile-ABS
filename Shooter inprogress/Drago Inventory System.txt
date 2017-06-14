@@ -1,0 +1,2669 @@
+#:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:
+# DRG Inventory System
+# Version: 2.00
+# Author : LiTTleDRAgo
+#:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:=:
+if true
+module LiTTleDRAgo
+#==============================================================================
+# *** EDITABLE SECTION
+#==============================================================================
+  NONDISCARD = {0 => [23,24,25,50,51,52],   # item nondiscardable
+                1 => [],                    # weapon nondiscardable
+                2 => []}                    # armor nondiscardable 
+                  
+  DEFAULT_MAX_SIZE   = 10 # Max size inventory default (can be changed in game)
+
+  DEFAULT_ITEM_STACK = {   # Max Item stack 
+            0 => 90,       # For All Unlisted Item
+            3 => 80,       # For item ID 3 (Full Potion)
+  }
+  
+  #------------------------------------------------------------
+  #*** ADDITIONAL SECTION (Can be deleted)
+  #------------------------------------------------------------
+  #------------------------------------------------------
+  # COMBINE ITEM (Reference : Resident Evil series)
+  # Format
+  #  'Item(ID-1) + Item(ID-2)' => 'Item(ID-Result)'
+  #------------------------------------------------------
+  # delete if you don't want to use it
+  
+  COMBINE_ITEM = { 
+  
+    'Item(1) + Item(1)'     => 'Item(2)',
+    'Item(1) + Item(2)'     => 'Item(3)',
+    
+      # Means : 
+      # Item ID 1 (potion) + Item ID 1 (potion)   => Item ID 2 (Hipotion)
+      # Item ID 1 (potion) + Item ID 2 (Hipotion) => Item ID 3 (Fullpotion)
+      #------------------------------------------------------
+        
+    'Item(1) + Weapon(1)'   => 'Weapon(2)',
+    'Weapon(1) + Weapon(2)' => 'Weapon(3)',
+    'Weapon(1) + Armor(1)'  => 'Weapon(4)',
+    
+  }
+  
+  SOUND_COMBINE = '055-Right01' # SE Used when combining item
+  # end delete
+  
+  #------------------------------------------------------
+  # RARITY SISTEM 
+  # Format
+  # Type = { ID Item => Star (max 8) }
+  #------------------------------------------------------
+  # delete if you don't want to use it
+  RARITY = {
+  
+    'Item'   => { 
+                  1 => 1, 
+                  2 => 3, 
+                },
+      # Means : 
+      # Item ID 1 (potion)     will have 1 star
+      # Item ID 2 (Hipotion)   will have 3 star
+      #------------------------------------------------------
+    'Weapon' =>  { 
+                  1 => 2, 
+                  2 => 3, 
+                 },
+                     
+    'Armor' => { 
+                  1 => 2, 
+                  2 => 3, 
+                },
+                 
+  }
+  # end delete
+  
+  #------------------------------------------------------------
+  # *** ADDITIONAL SECTION END
+  #------------------------------------------------------------
+  
+  #------------------------------------------------------------
+  #                            EDITABLE DETAIL 
+  #------------------------------------------------------------ 
+  
+  BACKGROUND  = 'Mn_Back'     # Animated background graphic    
+  TRAN_TIME   = 20            # Transition Time
+  TRAN_TYPE   = "004-Blind04" # Transition Type (Name)   
+  
+  # STRING SECTION
+  ITEM_WELCOME     = "In %s's Bag"
+  EQUIP_WELCOME    = "Press Shift button to Unequip"
+  ASK_MANY         = "How Many?"
+  GET_COMB         = "Get %2$s x %1$s"
+  PARTY_INV        = "%s's Inventory"
+  LOOT_INV         = "Discarded Item"
+  USE_COM          = "Use"
+  COMBINE_COM      = "Combine"     # Insert nil to disable permanently 
+  EQ_COM           = "Equip"       # Insert nil to disable permanently 
+  TRANSFER_COM     = "Transfer"    # Insert nil to disable permanently 
+  UNEQUIP_COM      = "Unequip"
+  UNEQUIPALL_COM   = "Unequip All"
+  DIS_COM          = "Discard"
+  CANCEL_COM       = "Cancel"
+  FULL_INVENTORY   = 'Inventory is full'
+  ELEMENT_TOO_MANY = 'Too Complex'
+  
+  MAIN_INVENTORY_LEADER = true   # Main inventory is always set to party leader
+                                 # when changing party 
+                                 # (won't do a thing if TRANSFER_COM is nil)
+  ELEMENT_STATUS_MARQUEE = true  # using marque text if element or status 
+                                 # effect is too many to show
+  SHOW_ITEM_STACK = true         # show max item stack in inventory?
+                                 # ex : Potion 1/80
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # You can disable combine and equip feature by using script call
+  #
+  #       $game_party.disable_combine = true / false
+  #       $game_party.disable_equip = true / false
+  #
+  # You can change the inventory size by using script call
+  #
+  #       $game_party.resize_inventory(new_size)
+  #
+  # You can switch the main inventory with the call script
+  #
+  #       $game_party.switch_inventory(ID_Actor)
+  #
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+#==============================================================================
+# *** END of EDITABLE SECTION
+#==============================================================================
+end
+
+#==============================================================================
+# ** Window_Base
+#------------------------------------------------------------------------------
+#  This class is for all in-game windows.
+#==============================================================================
+VX  = defined?(Window_ActorCommand)
+VXA = defined?(Window_BattleActor)
+
+class Window_Base < Window
+  #--------------------------------------------------------------------------
+  # * Draw Icon
+  #--------------------------------------------------------------------------
+  define_method(:cache) { VX ? Cache : RPG::Cache }
+  def draw_icon_vx_a(file_name,icon_index, x, y, enabled = true)
+    bitmap = cache.picture(file_name.to_s)
+    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+    self.contents.blt(x, y, bitmap, rect, enabled ? 255 : 128)
+  end
+  #--------------------------------------------------------------------------
+  # * Draw Icon
+  #--------------------------------------------------------------------------
+  def draw_icon_vx(icon_index=1, x=0, y=0, enabled = true)
+    bitmap = cache.system("Iconset")
+    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+    self.contents.blt(x, y, bitmap, rect, enabled ? 255 : 128)
+  end
+end
+
+#==============================================================================
+# ** Window_Selectable_Drago / Window_Command
+#------------------------------------------------------------------------------
+#  
+#==============================================================================
+eval "unless VX then class Window_Selectable_Drago < Window_Selectable; end end"
+raise "Please place \"DRG Inventory System "+
+  "VX Compatibility Patch\" above this script" if VX && !$drg_inv_sys_vx
+LCL = ['Equip','Battle','Menu'].map {|s| "Scene_#{s}"}
+LCL = ["#{VX ? 'Game_' : ''}"+'Interpreter',LCL,'Window_Command' ].flatten
+LCL += ['Spriteset_Map'].map {|s| "#{s}_Drago < #{s}"}
+#==============================================================================
+# ** Window_Welcome
+#------------------------------------------------------------------------------
+#  Window for the welcome at the top.
+#==============================================================================
+
+class Window_Welcome < Window_Base
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(about = nil)
+    case about
+    when nil,'help' 
+      super(0, 0, 640, 64)
+    when 'statistic'
+      super(352, 64, 288, 416)
+    end
+    self.contents = Bitmap.new(width - 32, height - 32)
+    self.contents.font.name = "Sylfaen"
+    refresh if about == nil
+  end
+      
+  def resize_window(w = width, h = height)
+    self.width  = w
+    self.height = h
+  end
+  
+  def refresh(x=nil)
+    self.contents.clear
+    @text,@align = "#{$game_party.limit_inventory.slots.size} / " +
+            "#{$game_party.limit_inventory.max_size}",4
+    return self.contents.draw_text(0, 0, 255, 32,  x.to_s, 4) if !x.nil?
+    actor = $game_actors[$game_party.inventory].name rescue ''
+    text = sprintf(LiTTleDRAgo::ITEM_WELCOME,actor)
+    self.contents.draw_text(0, 0, 255, 32,  text, 4)
+    if $game_party.limit_inventory.nil?
+      $game_party.limit_inventory = 
+      Game_LimitedInventory.new(LiTTleDRAgo::DEFAULT_MAX_SIZE)
+    end
+    self.contents.draw_text(550,0,100,32, @text ,@align )
+  end
+  #--------------------------------------------------------------------------
+  # * Set Text
+  #--------------------------------------------------------------------------
+  def set_text(text, align = 0,item=nil)
+    if text != @text or align != @align
+      self.contents.clear
+      self.contents.font.color = normal_color
+      if defined?(LiTTleDRAgo.ItemColor) && !item.nil?
+        color = case item
+        when RPG::Item   then LiTTleDRAgo.ItemColor  (item.id)
+        when RPG::Weapon then LiTTleDRAgo.WeaponColor(item.id)
+        when RPG::Armor  then LiTTleDRAgo.ArmorColor (item.id)
+        end 
+      end
+      self.contents.font.color = color if !color.nil?
+      draw_colored_words(4, 0, self.width - 40, 32, text, align)
+      @text,@align = text, align
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Draw Colored Words
+  #--------------------------------------------------------------------------
+  def draw_colored_words(x,y,width,height,message='',align=0)
+    xx = [0, self.contents.font.color.dup]
+    t = message.clone
+    t.gsub!(/ : /) { "\001[0] : " }
+    t.gsub!(/\\[Cc]\[([0-9]+)\]/) { "\001[#{$1}]" }
+    while ((c = t.slice!(/./m)) != nil)
+      if c == "\001"
+        t.sub!(/\[([0-9]+)\]/, "")
+        self.contents.font.color = text_color($1.to_i)
+        next
+      end
+      self.contents.draw_text(x + xx[0], y, width, height, c)
+      xx[0] += self.contents.text_size(c).width
+    end
+    self.contents.font.color = xx[1]
+  end
+end #of class
+#==============================================================================
+# ** Window_Target
+#------------------------------------------------------------------------------
+#  This window selects a use target for the actor on item and skill screens.
+#==============================================================================
+
+class Window_Target < Window_Selectable_Drago
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  define_method(:refresh) { update_cursor_rect }
+  def initialize
+    super(202, 170, 288, 160)
+    self.contents = Bitmap.new(width - 32, height - 32)
+    self.contents.font.name = "Sylfaen"
+    self.z += 10
+    @item_max = $game_party.actors.size
+    @column_max = 4
+  end
+  #--------------------------------------------------------------------------
+  # * Cursor Rectangle Update
+  #--------------------------------------------------------------------------
+  def update_cursor_rect
+    self.contents.clear
+    for i in 0...$game_party.actors.size
+      x = 10 + i * 60
+      y = 0
+      actor = $game_party.actors[i]
+      draw_actor_name(actor, x, y)
+      draw_actor_graphic(actor, x + 20, y + 80)
+      draw_actor_level(actor, x, y + 66)
+    end
+    actor = $game_party.actors[self.index]
+    x = y = 0
+    draw_actor_hp(actor, x + 60, y + 86)
+    VX ? draw_actor_mp(actor, x + 60, y + 106) :
+      draw_actor_sp(actor, x + 60, y + 106)
+    if @index <= -2
+      self.cursor_rect.set(0, (@index + 10) * 60, 60, 96)
+    elsif @index == -1
+      self.cursor_rect.set(0, 0, 60, @item_max * 116 - 20)
+    else
+      self.cursor_rect.set(@index * 60, 0, 60, 96)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Draw Level2
+  #--------------------------------------------------------------------------
+  def draw_actor_level(actor, x, y)
+    self.contents.font.color = system_color
+    self.contents.draw_text(x, y, 32, 32, "Lv:")
+    self.contents.font.color = normal_color
+    self.contents.draw_text(x + 16, y, 24, 32, actor.level.to_s, 2)
+  end
+end
+#==============================================================================
+# ** RPG::Item
+#------------------------------------------------------------------------------
+#  This class is core of item module
+#==============================================================================
+['Item','Armor','Weapon'].each {|s| eval "
+class RPG::#{s}
+  alias_method(:drg123_name, :name)
+  define_method(:name) { true_name.clone.gsub(/\\[Cc]\[([0-9]+)\]/) { '' }}
+  define_method(:true_name) { drg123_name}
+end#"}
+
+#==============================================================================
+# ** Bitmap
+#------------------------------------------------------------------------------
+#  This class is for slice text method
+#==============================================================================
+class Bitmap
+  def slice_text(text, width)
+    words = text.split(' ')
+    return words if words.size == 1
+    result, current_text = [], words.shift
+    words.each_index {|i|
+        if self.text_size("#{current_text} #{words[i]}").width > width
+          result.push(current_text)
+          current_text = words[i]
+        else
+          current_text = "#{current_text} #{words[i]}"
+        end
+        result.push(current_text) if i >= words.size - 1}
+    return result
+  end
+end
+#==============================================================================
+# ** Scene_Item
+#------------------------------------------------------------------------------
+#  This class performs item screen processing.
+#==============================================================================
+
+class Scene_Item
+  #--------------------------------------------------------------------------
+  # * Stats Text Update
+  #--------------------------------------------------------------------------
+  def update_stats
+    @x = @y = 0
+    unless @hp_word
+      @hp_word    = VX ? "#{Vocab.hp} :"    : "#{$data_system.words.hp} :"
+      @sp_word    = VX ? "#{Vocab.mp} :"    : "#{$data_system.words.sp} :"
+      @str_word   = VX ? ''                 : "#{$data_system.words.str} :"
+      @dex_word   = VX ? ''                 : "#{$data_system.words.dex} :"
+      @agi_word   = VX ? "#{Vocab.agi} :"   : "#{$data_system.words.agi} :"
+      @int_word   = VX ? "#{Vocab.spi} :"   : "#{$data_system.words.int} :"
+      @atk_word   = VX ? "#{Vocab.atk} :"   : "#{$data_system.words.atk} :"
+      @pdef_word  = VX ? "#{Vocab.def} :"   : "#{$data_system.words.pdef} :"
+      @mdef_word  = VX ? ''                 : "#{$data_system.words.mdef} :"
+      @guard_word = VX ? "#{Vocab.guard} :" : "#{$data_system.words.guard} :"
+    end
+    if @item_window[0].active && @item_window[0].item != 0
+      @item = @item_window[0].item 
+      update_item
+    elsif @item_window[1].active &&  @item_window[1].item != 0
+      @item = @item_window[1].item 
+    end
+    case @item
+    when RPG::Item   then update_item_values('Item')   if window_index_update?
+    when RPG::Weapon then update_item_values('Weapon') if window_index_update?
+    when RPG::Armor  then update_item_values('Armor')  if window_index_update?
+    end
+    update_guardset_status
+  end
+  def window_index_update?
+    if @must_update
+      @must_update = nil
+      return true
+    elsif @item_window[0].active && @old_index != @item_window[0].index
+      @old_index = @item_window[0].index
+      return true
+    elsif @item_window[1].active && @old_index != @item_window[1].index
+      @old_index = @item_window[1].index
+      return true
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # * Set Rarity
+  #--------------------------------------------------------------------------
+  def set_rarity(about='',id=0)
+    rarity = LiTTleDRAgo::RARITY rescue {}
+    if rarity[about] != nil && rarity[about][id] != nil && !$drg_inv_sys_no_star
+      rarity[about][id].abs.times do |i| 
+        src_rect = Rect.new(0, 0, 24, 24)
+        cache = VX ? Cache : RPG::Cache
+        icon = cache.icon('star') rescue 'no_icon'
+        if icon == 'no_icon'
+          opac = @item_window[2].opacity 
+          @item_window[2].opacity -= 150
+          $drg_inv_sys_no_star = true
+          report_missing_image('star.png','Icons')
+          @item_window[2].opacity = opac
+        else
+          @sta_window['stat'].contents.blt(@x-32*i+230, @y + 24, icon, src_rect)
+        end
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Draw Colored Words
+  #--------------------------------------------------------------------------
+  def draw_colored_words(x,y,width,height,message='',a = 0)
+    xx = [0, @sta_window['stat'].contents.font.color.dup]
+    t = message.clone
+    t.gsub!(/\\[Cc]\[([0-9]+)\]/) { "\001[#{$1}]" }
+    while ((c = t.slice!(/./m)) != nil)
+      if c == "\001"
+        t.sub!(/\[([0-9]+)\]/, "")
+        @sta_window['stat'].contents.font.color = 
+             @sta_window['stat'].text_color($1.to_i)
+        next
+      end
+      @sta_window['stat'].contents.draw_text(x + xx[0],y,width,height,c) if a<10
+      xx[0] += @sta_window['stat'].contents.text_size(c).width
+    end
+    @sta_window['stat'].contents.font.color = xx[1] if a<10
+  end
+  #--------------------------------------------------------------------------
+  # * slice_col_words
+  #--------------------------------------------------------------------------
+  def slice_col_words(text, width)
+    space = ' '
+    words = text.split(space)
+    return words if words.size == 1
+    result, current_text = [], words.shift
+    words.each_index {|i|
+    t = "#{current_text}#{space}#{words}"
+    if @sta_window['stat'].contents.text_size(t).width > width
+      result.push(current_text)
+      current_text = words[i]
+    else
+      current_text = "#{current_text}#{space}#{words[i]}"
+    end
+    result.push(current_text) if i >= words.size - 1}
+    return result
+  end
+  #--------------------------------------------------------------------------
+  # * Update Item Values
+  #--------------------------------------------------------------------------
+  def update_item_values(type='Item')
+    @sta_window['stat'].contents.clear
+    add = type == 'Armor' ? (VX ? eval("Vocab.armor#{@item.kind + 1}") : 
+          $data_system.words.send("armor#{@item.kind + 1}")) : '' 
+    add = " -> #{add}" if type == 'Armor'
+    string = case type
+      when 'Item' then ['Enhancements: ','Range: ','Recovery: ',
+                        'Elements: ','Status Effects: ','','','','']
+      when 'Weapon' then [ @atk_word, @pdef_word, @mdef_word, 
+                       @str_word, @dex_word, @agi_word, @int_word,
+                      'Elements: ' ,'Status Effects: ']
+      when 'Armor' then [@pdef_word, @mdef_word, 'EVA : ', 
+                     @str_word, @dex_word, @agi_word, @int_word,
+                     'Guard Elements: ','Guard Effects: ']
+      end
+    vy = VX ? -60 : 0 
+    @sta_window['stat'].contents.font.color = Color.new(192, 224, 255, 255)
+    @sta_window['stat'].contents.font.bold = true
+    set_rarity(type,@item.id)
+    @sta_window['stat'].contents.draw_text(@x,@y    ,212,32, "Name: "      )    
+    @sta_window['stat'].contents.draw_text(@x,@y+42 ,212,32, "Description:")
+    @sta_window['stat'].contents.draw_text(@x,@y+106+6,212,32, "Item Type: " )
+    @sta_window['stat'].contents.draw_text(@x,@y+140,212,32, "Statistics: ")
+    size = @sta_window['stat'].contents.font.size
+    @sta_window['stat'].contents.font.size -= 3
+    @sta_window['stat'].contents.font.bold = false
+    @sta_window['stat'].contents.font.color = Color.new(255, 255, 255, 255)
+    bio = [@item.description.clone.gsub(/\\[Cc]\[([0-9]+)\]/) { '' }, 
+          250]
+    bio = @sta_window['stat'].contents.slice_text(*bio)
+    if defined?(LiTTleDRAgo.ItemColor)
+      color = case @item
+      when RPG::Item   then LiTTleDRAgo.ItemColor  (@item.id)
+      when RPG::Weapon then LiTTleDRAgo.WeaponColor(@item.id)
+      when RPG::Armor  then LiTTleDRAgo.ArmorColor (@item.id)
+      end 
+    end
+    @sta_window['stat'].contents.font.color = color if !color.nil?
+    @sta_window['stat'].contents.font.size = size
+    draw_colored_words(@x+60,@y,212,32,@item.true_name)
+    @sta_window['stat'].contents.font.size -= 3
+    @sta_window['stat'].contents.font.color = Color.new(255, 255, 255, 255)
+    bio.each_index {|i|
+    @sta_window['stat'].contents.draw_text(@x,(@y+62)+i*15,250,32,bio[i])} 
+    @sta_window['stat'].contents.font.size = size
+    @sta_window['stat'].contents.font.color = Color.new(255, 255, 255, 255)
+    @sta_window['stat'].contents.draw_text(@x+95,@y+106+6,212,32,type+add,0)
+    begin;  return if @item.card?;  rescue;  nil end
+    @sta_window['stat'].contents.font.color = Color.new(192, 224, 255, 255)
+    @sta_window['stat'].contents.draw_text(@x,@y+165   ,212,32,string[0])
+    @sta_window['stat'].contents.draw_text(@x,@y+185   ,212,32,string[1])
+    @sta_window['stat'].contents.draw_text(@x,@y+205   ,212,32,string[2])
+    @sta_window['stat'].contents.draw_text(@x,@y+225   ,212,32,string[3])
+    @sta_window['stat'].contents.draw_text(@x,@y+245   ,212,32,string[4])
+    @sta_window['stat'].contents.draw_text(@x,@y+265+vy,212,32,string[5])
+    @sta_window['stat'].contents.draw_text(@x,@y+285+vy,212,32,string[6])
+    @sta_window['stat'].contents.draw_text(@x,@y+305+vy,212,32,string[7])
+    @sta_window['stat'].contents.draw_text(@x,@y+325+vy,212,32,string[8])
+    @sta_window['stat'].contents.font.color = Color.new(255, 255, 255, 255)
+    if type == 'Item'
+      text = [case @item.parameter_type
+      when 0 then "None"
+      when 1 then "Max #{@hp_word} + #{@item.parameter_points}"
+      when 2 then "Max #{@sp_word} + #{@item.parameter_points}"
+      when 3 then "#{@str_word} + #{@item.parameter_points}"
+      when 4 then "#{@dex_word} + #{@item.parameter_points}"
+      when 5 then "#{@agi_word} + #{@item.parameter_points}"
+      when 6 then "#{@int_word} + #{@item.parameter_points}"
+      end, case @item.scope
+      when 0,1 then @item.scope == 0 ? "None"        : "One Enemy"
+      when 2,3 then @item.scope == 2 ? "All Enemies" : "One Ally"
+      when 4,5 then @item.scope == 4 ? "All Allies"  : "One Ally"
+      when 6,7 then @item.scope == 6 ? "All Allies"  : "This User"
+      end, VX ? [@item.hp_recovery, @item.mp_recovery] : 
+                [@item.recover_hp, @item.recover_sp]].flatten
+      @sta_window['stat'].contents.draw_text(@x+110,@y+165,212,32,text[0])
+      @sta_window['stat'].contents.draw_text(@x+110,@y+185,212,32,text[1])
+      @sta_window['stat'].contents.draw_text(@x+110,@y+205,212,32,"#{text[2]} HP")
+      @sta_window['stat'].contents.draw_text(@x+180,@y+205,212,32,"#{text[3]} SP")
+    else
+      atk = type == 'Weapon' ? @item.atk : @item.eva
+      pdef = VX ? "#{@item.def}" : @item.pdef
+      mdef = VX ? '' : @item.mdef
+      str = VX ? '' : @item.str_plus
+      dex = VX ? '' : @item.dex_plus
+      agi = VX ? @item.agi : @item.agi_plus
+      int = VX ? @item.spi : @item.int_plus
+      text = ["#{atk}","#{pdef}","#{mdef}","#{atk}"]
+      text.shift if type == 'Armor'
+      ev = type == 'Armor' ? vy/3 : 0
+      @sta_window['stat'].contents.draw_text(@x+120,@y+165,212,32,text[0])
+      @sta_window['stat'].contents.draw_text(@x+120,@y+185,212,32,text[1])
+      @sta_window['stat'].contents.draw_text(@x+120,@y+205+ev,212,32,text[2])
+      @sta_window['stat'].contents.draw_text(@x+120,@y+225,212,32,"#{str}")
+      @sta_window['stat'].contents.draw_text(@x+120,@y+245,212,32,"#{dex}")
+      @sta_window['stat'].contents.draw_text(@x+120,@y+265+vy,212,32,"#{agi}")
+      @sta_window['stat'].contents.draw_text(@x+120,@y+285+vy,212,32,"#{int}")
+    end
+    guardset = [ case type
+          when 'Item', 'Weapon' then @item.element_set
+          when 'Armor' then VX ? @item.element_set : @item.guard_element_set
+          end, case type
+          when 'Item' then @item.plus_state_set
+          when 'Weapon' then VX ? @item.state_set : @item.plus_state_set
+          when 'Armor' then VX ? @item.state_set : @item.guard_state_set
+          end]
+    @element = @status = ''
+    guardset[0].each_with_index {|i,s| @element += ", " if s > 0
+                                  @element += $data_system.elements[i] }
+    guardset[1].each_with_index {|i,s| @status += ", " if s > 0
+                                  @status += $data_states[i].name }
+    @element = 'None' if @element == ''
+    @element += ', ' if  @element.size > 20
+    @status = 'None' if @status == ''  
+    @status += ', '  if @status.size > 20
+    pos = type == 'Item' ? [@x+110,@y+230] : [@x+120,@y+310+vy]
+    @sta_window['stat'].contents.draw_text(pos[0],pos[1],420,24,@element)
+    @sta_window['stat'].contents.draw_text(pos[0],pos[1]+20,420,24,@status)
+  end
+  #--------------------------------------------------------------------------
+  # * Update guardset status
+  #--------------------------------------------------------------------------
+  def update_guardset_status
+    @time_status = (@time_status || 0) + 1
+    return if @item.nil? || @time_status < 8
+    vy,@time_status = VX ? -60 : 0 ,0
+    pos = @item.is_a?(RPG::Item) ? [@x+110,@y+230] : [@x+120,@y+310+vy]
+    kuu = LiTTleDRAgo::ELEMENT_TOO_MANY
+    if  @element != nil && @element.size > 20
+      rect = Rect.new(pos[0], pos[1], @sta_window['stat'].width  - 32, 24)
+      if LiTTleDRAgo::ELEMENT_STATUS_MARQUEE
+        @sta_window['stat'].contents.fill_rect(rect, Color.new(0, 0, 0, 0))
+        array = @element.split(//)
+        array << array[0]
+        array.shift 
+        @element = array.join
+        @sta_window['stat'].contents.draw_text(pos[0],pos[1],420,24,@element)
+      else
+        @sta_window['stat'].contents.fill_rect(rect, Color.new(0, 0, 0, 0))
+        @sta_window['stat'].contents.draw_text(pos[0],pos[1],420,24,kuu)
+      end
+    end
+    if  @status != nil && @status.size > 20
+      rect = Rect.new(pos[0], pos[1]+20, @sta_window['stat'].width  - 32, 24)
+      if LiTTleDRAgo::ELEMENT_STATUS_MARQUEE
+        @sta_window['stat'].contents.fill_rect(rect, Color.new(0, 0, 0, 0))
+        array = @status.split(//)
+        array << array[0]
+        array.shift 
+        @status = array.join
+        @sta_window['stat'].contents.draw_text(pos[0],pos[1]+20,420,24,@status)
+      else
+        @sta_window['stat'].contents.fill_rect(rect, Color.new(0, 0, 0, 0))
+        @sta_window['stat'].contents.draw_text(pos[0],pos[1]+20,420,24,kuu)
+      end
+    end
+  end 
+end #of class
+#==============================================================================
+# ** Game_Actor
+#------------------------------------------------------------------------------
+#  This class handles the actor. It's used within the Game_Actors class
+#  ($game_actors) and refers to the Game_Party class ($game_party).
+#==============================================================================
+class Game_Actor < Game_Battler
+  @@equip = VX ? 'change_equip' : 'equip'
+  eval " 
+  alias drg146_equip #{@@equip} unless method_defined?(:drg146_equip)
+  def equip_fix?(*args) fix_equipment end if VX
+  def #{@@equip}(*args)
+    max = $game_party.limit_inventory.max_size
+    $game_party.limit_inventory.resize (max+1)
+    drg146_equip(*args)
+    $game_party.limit_inventory.resize (max)
+  end#"
+end
+#==============================================================================
+# ** Game_Temp
+#------------------------------------------------------------------------------
+#  This class handles temporary data that is not included with save data.
+#  Refer to "$game_temp" for the instance of this class.
+#==============================================================================
+class Game_Temp
+  alias_method :drg137_init, :initialize unless method_defined?(:drg137_init)
+  attr_accessor :slots_to_discard, :inventory
+  define_method(:initialize) { [drg137_init,
+                         @slots_to_discard = Game_LimitedInventory.new(-1)] }
+end
+#==============================================================================
+# ** Game_Party
+#------------------------------------------------------------------------------
+#  This class handles the party. It includes information on amount of gold 
+#  and items. Refer to "$game_party" for the instance of this class.
+#==============================================================================
+class Game_Party
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Public Instance Variables
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  attr_reader :inventories
+  attr_accessor :inventory,:gold,:disable_combine,:disable_equip
+  attr_accessor :no_multi_use
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Aliased Method
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alias drg146_can_use item_can_use? unless method_defined?(:drg146_can_use)
+  alias drg146_number item_number unless method_defined?(:drg146_number)
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Object Initialization
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def limit_inventory(id=@inventory,val=nil)
+    @limit_inventory = {} if @limit_inventory.nil?
+    if @limit_inventory[id].nil?
+      @limit_inventory[id] = 
+          Game_LimitedInventory.new(LiTTleDRAgo::DEFAULT_MAX_SIZE)
+    end
+    return val ? @limit_inventory[id] = val : @limit_inventory[id]
+  end
+  
+  def stack_item(item_id)
+    stack = LiTTleDRAgo::DEFAULT_ITEM_STACK
+    return stack[item_id] || stack[0]
+  end  
+  
+  if VX
+    def actors() members end
+    def weapon_number(v) item_number($data_weapons[v]) end 
+    def armor_number(v) item_number($data_armors[v]) end 
+    def item_can_use?(item)
+      item = $data_items[item] if item.is_a?(Integer)
+      drg146_can_use(item)
+    end
+    def item_number(item)
+      item = $data_items[item] if item.is_a?(Integer)
+      drg146_number(item)
+    end
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Gain Item (or Lose)
+  #       item  >> item / item_id
+  #       n     >> number
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def drg137_gain_item(id, n)
+    @items[id] = [item_number(id) + n, 0].max if id > 0
+  end
+  def drg137_gain_weapon(id, n)
+    @weapons[id] = [weapon_number(id) + n, 0].max if id > 0
+  end
+  def drg137_gain_armor(id, n)
+    @armors[id] = [armor_number(id) + n, 0].max if id > 0
+  end
+  
+  def gain_item(item, n, include_equip = false)
+    return if item.nil?
+    case item
+    when RPG::Item, Numeric
+      array = item.is_a?(RPG::Item) ? [item,item.id] : [$data_items[item],item]
+      ammount = n
+      while ammount > 1
+        gain_proses(array[0], 1)
+        drg137_gain_item (array[1], 1)
+        ammount -= 1
+      end
+      gain_proses(array[0], ammount)
+      drg137_gain_item (array[1], ammount)
+    when RPG::Weapon then gain_weapon(item.id, n)
+    when RPG::Armor  then gain_armor (item.id, n)
+    end 
+    return unless VX
+    number = item_number(item)
+    n += number
+    if include_equip and n < 0
+      for actor in actors
+        while n < 0 and actor.equips.include?(item)
+          actor.discard_equip(item)
+          n += 1
+        end
+      end
+    end
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Gain Weapon And Armor (or Lose)
+  #       item_id  >> weapon / armor id
+  #       n        >> number
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def gain_weapon(item_id, n)
+    ammount = n
+    while ammount > 1
+      drg137_gain_weapon (item_id, 1)
+      gain_proses($data_weapons[item_id],1) 
+      ammount -= 1
+    end
+    drg137_gain_weapon (item_id, ammount)
+    gain_proses($data_weapons[item_id],ammount) 
+  end
+  
+  def gain_armor(item_id, n)
+    ammount = n
+    while ammount > 1
+      drg137_gain_armor (item_id, 1)
+      gain_proses($data_armors[item_id],1)
+      ammount -= 1
+    end
+    drg137_gain_armor (item_id, ammount)
+    gain_proses($data_armors[item_id],ammount) 
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Reduce_Item (for synchronize default item number and limited item number)
+  #       item  >> item
+  #       n     >> number
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def reduce_item(item, n)
+    case item
+    when RPG::Item then  drg137_gain_item (item.id, -n)
+    when RPG::Weapon then drg137_gain_weapon (item.id, -n)
+    when RPG::Armor then drg137_gain_armor (item.id, -n)
+    end
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Gain Proses
+  #       item  >> item
+  #       n     >> number
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def gain_proses(item,n)
+    init_multi_inventory if @inventories.nil?
+    return if item == nil
+    type = item.is_a? (RPG::Item) ? 0 : item.is_a? (RPG::Weapon) ? 1 : 2
+    if n > 0
+      n2 = limit_inventory.add_item (type, item.id, n)
+      n -= n2
+      if LiTTleDRAgo::NONDISCARD[type].include?(item.id)
+        while n2 > 0
+          for i in 0...limit_inventory.slots.size
+            x = limit_inventory.slots.size - 1 - i
+            slot = limit_inventory.slots[x]
+            if !LiTTleDRAgo::NONDISCARD[slot.item_type].include?(slot.item_id)
+              l_type, id = slot.item_type, slot.item_id
+              while l_type == slot.item_type && id == slot.item_id
+                x -= 1
+                slot = limit_inventory.slots[x]
+              end
+              l_item, l_n = limit_inventory.slots[x + 1].item, limit_inventory.slots[x + 1].amount
+              break
+            end
+          end
+          return if l_item.nil? or l_n.nil?
+          gain_proses(l_item, -1*l_n)
+          $game_temp.slots_to_discard.add_item (l_type, id, l_n)
+          n3 = limit_inventory.add_item (type, item.id, n2)
+          n -= n3
+          n2 = n3
+        end
+      end
+    else
+      n2 = limit_inventory.remove_item (type, item.id, -1*n)
+      n += n2
+      n2 *= -1
+    end
+    if n2 > 0
+      $game_temp.slots_to_discard.add_item (type, item.id, n2)
+    elsif n2 < 0
+      $game_temp.slots_to_discard.remove_item (type, item.id, -1*n2)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Item Number
+  #--------------------------------------------------------------------------
+  def all_item_number(item) 
+    case item 
+    when RPG::Item   then item_number(item.id) 
+    when RPG::Weapon then weapon_number(item.id) 
+    when RPG::Armor  then armor_number(item.id) 
+    end
+  end 
+  
+  def transfer_item(item, n, invent, target) 
+    item = $data_items[item] if item.is_a?(Integer)
+    transfer_process(item, n, invent, target) 
+  end
+  
+  def transfer_weapon(item, n, invent, target) 
+    item = $data_weapons[item] if item.is_a?(Integer)
+    transfer_process(item, n, invent, target) 
+  end
+  
+  def transfer_armor(item, n, invent, target) 
+    item = $data_armors[item] if item.is_a?(Integer)
+    transfer_process(item, n, invent, target) 
+  end
+  
+  def transfer_process(item, n, invent, target) 
+    return if item.nil? || invent == target || n < 0
+    type = item.is_a? (RPG::Item) ? 0 : item.is_a? (RPG::Weapon) ? 1 : 2
+    d = @inventory
+    stack = item.is_a?(RPG::Item) ? stack_item(item.id) : 1
+    n.times {
+      slot = limit_inventory(target).slots
+      limit_max = limit_inventory(target).max_size
+      number =  all_item_number(item) 
+      unless slot.size >= limit_max && (number <= 0 || (number % stack) == 0)
+        switch_inventory(invent)
+        if all_item_number(item) >= 1
+          gain_item(item, -1) 
+          switch_inventory(target)
+          gain_item(item, 1)
+        end
+      end}
+    switch_inventory(d)
+  end 
+  #--------------------------------------------------------------------------
+  # * Initialize Multi Inventory
+  #--------------------------------------------------------------------------
+  def init_multi_inventory
+    @inventory = @actors[0] ? @actors[0].id : 1 if @inventory.nil?
+    @inventories = [[@items, @weapons, @armors, @gold]] if @inventories.nil?
+  end
+  #--------------------------------------------------------------------------
+  # * Switch Inventory
+  #--------------------------------------------------------------------------
+  def switch_inventory(id)
+    return if @inventory == id
+    init_multi_inventory if @inventories.nil?
+    new_inventory = @inventories[id] || [{}, {}, {}, 0]
+    @inventories[@inventory] = [@items, @weapons, @armors, @gold]
+    @items   = new_inventory[0] 
+    @weapons = new_inventory[1] 
+    @armors  = new_inventory[2] 
+    @gold    = new_inventory[3] 
+    @inventory = id
+  end
+  #--------------------------------------------------------------------------
+  # * Destroy Inventory
+  #--------------------------------------------------------------------------
+  def destroy_inventory(id=0)
+    init_multi_inventory if @inventories.nil?
+    @inventories[id] = [{}, {}, {}, 0]
+    return unless @inventory == id
+    @items,@weapons,@armors,@gold = {}, {}, {}, 0
+    limit_inventory.clear
+  end
+  #--------------------------------------------------------------------------
+  # * Resize Inventory
+  #--------------------------------------------------------------------------
+  def resize_inventory(new_size)
+    $game_party.limit_inventory.resize(new_size)
+  end
+  #--------------------------------------------------------------------------
+  # * Combine Inventory
+  #--------------------------------------------------------------------------
+  def combine_inventory(base_id, merge_id, overflow = false)
+    base_id = @inventory if base_id == nil
+    base, merge = @inventories[base_id], @inventories[merge_id]
+    base_items, base_weapons, base_armors, base_gold = base
+    items, weapons, armors, gold = merge
+    items.each do |item_id, amount|
+      number = base_items[item_id].to_i + amount
+      items[item_id] = overflow && number > 99 ? number - 99 : 0
+      base_items[item_id] = overflow && number > 99 ? 99 : number
+    end
+    weapons.each do |weapon_id, amount|
+      number = base_weapons[weapon_id].to_i + amount
+      weapons[weapon_id] = overflow && number > 99 ? number - 99 : 0
+      base_weapons[weapon_id] = overflow && number > 99 ? 99 : number
+    end
+    armors.each do |armor_id, amount|
+      number = base_armors[armor_id].to_i + amount
+      armors[armor_id] = overflow && number > 99 ? number - 99 : 0
+      base_armors[armor_id] = overflow && number > 99 ? 99 : number
+    end
+    number = base_gold + gold
+    base[3] = overflow && number > 9999999 ? 9999999 : number
+    merge[3] = overflow && number > 9999999 ? number - 9999999 : 0
+  end
+end
+#==============================================================================
+# ** Scene_Menu
+#------------------------------------------------------------------------------
+#  This class performs menu screen processing.
+#==============================================================================
+LCL.each_with_index {|h,i| j = ['command','status','actor'].map {|k| 
+                          "update_#{ k }#{ VX ? '_selection' : '' }" } 
+eval "
+class #{h}
+  attr_accessor :commands if #{i} == 4
+  if #{i} == 0
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # * Resize Inventory (change inventory size)
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    def resize_inventory(new_size)
+      $game_party.limit_inventory.resize (new_size)
+    end
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # * Command End
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    unless method_defined?(:drg150_com_end) || !method_defined?(:command_end)
+      alias drg150_com_end command_end 
+      alias drg150_com_129 command_129 
+    end
+    define_method(:command_end) { [drg150_com_end,check_discard_item] }
+    #--------------------------------------------------------------------------
+    # * Change Party Member
+    #--------------------------------------------------------------------------
+    def command_129
+      if (LiTTleDRAgo::MAIN_INVENTORY_LEADER && LiTTleDRAgo::TRANSFER_COM)
+        $game_party.init_multi_inventory 
+        $game_party.switch_inventory($game_party.actors[0].id)
+      end
+      return drg150_com_129
+    end
+    #--------------------------------------------------------------------------
+    # * check_discard_item
+    #--------------------------------------------------------------------------
+    def check_discard_item
+      $scene = Scene_Loot.new  unless $game_temp.slots_to_discard.slots.empty?
+    end
+    next
+  end
+  if #{i} == 5
+    #--------------------------------------------------------------------------
+    # * Create Viewport
+    #--------------------------------------------------------------------------
+    def create_viewports
+      @viewport1 = Viewport.new(0, 0, 640, 480)
+      @viewport2 = Viewport.new(0, 0, 640, 480)
+      @viewport3 = Viewport.new(0, 0, 640, 480)
+      @viewport2.z, @viewport3.z = 50, 100
+    end
+    next
+  end
+  if [1,2,3].include?(#{i})
+    #--------------------------------------------------------------------------
+    # * Alias Listing
+    #--------------------------------------------------------------------------
+    alias drg137_main main unless method_defined?(:drg137_main)
+    alias drg137_batend battle_end unless method_defined?(:drg137_batend) ||
+                                         !method_defined?(:battle_end) 
+    if LiTTleDRAgo::TRANSFER_COM && #{i} == 3
+      alias drg150_upd_com #{j[0]} unless method_defined?(:drg150_upd_com)
+      alias drg150_upd_sta #{!VX ? j[1] : j[2]} unless method_defined?(:drg150_upd_sta)
+      #--------------------------------------------------------------------------
+      # * Frame Update (when command window is active)
+      #--------------------------------------------------------------------------
+      def #{j[0]}
+        if Input.trigger?(Input::C) && $game_party.actors.size > 0 
+          if @command_window.index == 0
+            item = Scene_Item.new
+            item.sound_play('decision')
+            if $game_party.actors.size == 1
+              $scene = Scene_Item.new($game_party.actors[0].id)
+              return
+            end
+            20.times {[Graphics,Input].each {|s| s.update }} 
+            @command_window.active = false
+            @status_window.active = true
+            @status_window.index = 0
+            return 
+          end
+        end
+        drg150_upd_com
+      end 
+      #--------------------------------------------------------------------------
+      # * Frame Update (when status window is active)
+      #--------------------------------------------------------------------------
+      def #{!VX ? j[1] : j[2]}
+        if Input.trigger?(Input::C) && @command_window.index == 0 
+          if @status_window.active
+            item = [Scene_Item.new, $game_party.actors[@status_window.index].id]
+            item[0].sound_play('decision')
+            return $scene = Scene_Item.new(item[1])
+          end
+        end
+        drg150_upd_sta
+      end 
+    end 
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # * Main
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    def main
+      drg137_main
+      $scene = Scene_Loot.new if !$game_temp.slots_to_discard.slots.empty?
+    end if #{i} == 1
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # * battle_end
+    #     open up loot management if inventory is full in the end of battle
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    def battle_end(result)
+      drg137_batend (result)
+      if !$game_temp.slots_to_discard.slots.empty? && !$scene.is_a?(Scene_Gameover)
+        $scene = Scene_Loot.new
+      end
+    end if #{i} == 2
+  end
+end#"}
+
+#==============================================================================
+# ** Game LimInvSlot
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#  This class holds the data on a single slot of the inventory
+#==============================================================================
+class Game_LimInvSlot
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Public Instance Variables
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  attr_reader   :item_type,:item_id,:amount
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Object Initialization
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def initialize
+    @item_type = -1
+    @item_id = 0
+    @amount = 0
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Add Item
+  #    n         >> the amount to add
+  #    item_type >> the type of item being added
+  #    item_id   >> the ID of item being added
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def add_item (n, item_type = -1, item_id = 0)
+    if item_type != -1
+      @item_type = item_type
+      @item_id = item_id
+    end
+    if n > space_left
+      @amount += space_left
+      return n - space_left
+    else
+      @amount += n
+      return 0
+    end
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Remove Item
+  #    n >> the amount to remove
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def remove_item (n)
+    @amount -= n
+    if @amount <= 0
+      n = -1*@amount
+      @item_type = -1
+      @item_id = 0
+      @amount = 0
+      return n
+    end
+    return 0
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Item
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def item
+    return case @item_type
+    when -1 then nil
+    when 0 then $data_items[@item_id]
+    when 1 then $data_weapons[@item_id]
+    when 2 then $data_armors[@item_id]
+    end
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Space Left
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def space_left
+    return 1 if item == nil
+    return $game_party.stack_item(item.id) - @amount  if item.is_a?(RPG::Item)
+    return 1 - @amount
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Equal?
+  #    other : another Game_LimInvSlot
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def == (other)
+    return false if !other.is_a? (Game_LimInvSlot)
+    return false if other.item_type != @item_type
+    return false if other.item_id != @item_id
+    return false if other.amount != @amount
+    return super (other)
+  end
+end
+
+#==============================================================================
+# ** Game_LimitedInventory
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#  This is an array to store the party's inventory
+#==============================================================================
+class Game_LimitedInventory
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Public Instance Variable
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  attr_reader   :max_size
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Object Initialization
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def initialize (size)
+    @max_size = size
+    clear
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Clear
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def clear()  @items,@weapons,@armors = [],[],[] end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Resize
+  #    size : the number of slots available
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def resize (size)
+    old_size = slots.size
+    if size < old_size
+      index = slots.size - 1
+      while slots.size > size
+        slot = slots[index]
+        if !LiTTleDRAgo::NONDISCARD[slot.item_type].include?(slot.item_id)
+          type, id, n = slot.item_type, slot.item_id, slot.amount
+          remove_item (type, id, n)
+          $game_temp.slots_to_discard.add_item (type, id, n)
+          index -= 1
+        else
+          index -= 1
+        end
+        break if index < 0
+      end
+    end
+    @max_size = size
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Add Item
+  #    type : the type of item being added
+  #    id   : the ID of item being added
+  #    n    : the amount to add
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def add_item (type, id, n = 1)
+    array = case type
+    when 0 then @items
+    when 1 then @weapons
+    when 2 then @armors
+    end
+    sort_index = 0
+    array.each { |slot|
+      if slot.item_id == id
+        n = slot.add_item (n, type, id)
+        break if n == 0
+        sort_index += 1
+      elsif slot.item_id < id
+        sort_index += 1
+      else
+        break
+      end }
+    if n > 0
+      while @max_size == -1 || ((@items.size + @weapons.size + @armors.size) < @max_size)
+        slot = Game_LimInvSlot.new
+        n = slot.add_item (n, type, id)
+        array.insert (sort_index, slot)
+        sort_index += 1
+        break if n == 0
+      end
+    end
+    return n
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Add Item
+  #    type : the type of item being added
+  #    id   : the ID of item being added
+  #    n    : the amount to add
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def add_item_reverse (type, id, n = 1)
+    array = case type
+    when 0 then @items
+    when 1 then @weapons
+    when 2 then @armors
+    end
+    sort_index = 0
+    array.reverse.each { |slot|
+      if slot.item_id == id
+        n = slot.add_item (n, type, id)
+        break if n == 0
+        sort_index += 1
+      elsif slot.item_id < id
+        sort_index += 1
+      else
+        break
+      end }
+    if n > 0
+      while @max_size == -1 || ((@items.size + @weapons.size + @armors.size) < @max_size)
+        slot = Game_LimInvSlot.new
+        n = slot.add_item (n, type, id)
+        array.insert (sort_index, slot)
+        sort_index += 1
+        break if n == 0
+      end
+    end
+    return n
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Remove Item
+  #    type : the type of item being removed
+  #    id   : the ID of item being removed
+  #    n    : the amount to remove
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def remove_item (type, id, n = 1)
+    array = case type
+    when 0 then @items
+    when 1 then @weapons
+    when 2 then @armors
+    end
+    array.reverse.each { |slot|
+      if slot.item_type == type && slot.item_id == id
+        n = slot.remove_item (n)
+        array.delete (slot) if slot.amount == 0
+        break if n == 0
+      end }
+    return n
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Remove Item
+  #    type : the type of item being removed
+  #    id   : the ID of item being removed
+  #    n    : the amount to remove
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def remove_item_reverse (type, id, n = 1)
+    array = case type
+    when 0 then @items
+    when 1 then @weapons
+    when 2 then @armors
+    end
+    array.each { |slot|
+      if slot.item_type == type && slot.item_id == id
+        n = slot.remove_item (n)
+        array.delete (slot) if slot.amount == 0
+        break if n == 0
+      end }
+    return n
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Slots
+  #    get all slot in the inventory
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def slots
+    return @items + @weapons + @armors
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * slot
+  #    get slot for the certain item
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def slot(item)
+    array = @items
+    array = @weapons if item.is_a?(RPG::Weapon)
+    array = @armors if item.is_a?(RPG::Armor)
+    for i in 0...array.size
+      slot = array[i]
+      break if slot.item_id == item.id
+    end
+    return slot
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * slot
+  #    get slot for the certain item
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def slot_reverse(item)
+    array = @items
+    array = @weapons if item.is_a?(RPG::Weapon)
+    array = @armors if item.is_a?(RPG::Armor)
+    array.reverse!
+    for i in 0...array.size
+      slot = array[i]
+      break if slot.item_id == item.id
+    end
+    return slot
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Check Space
+  #    slot : an Game_InvSlot object
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def enough_space? (slot)
+    return true if @max_size == -1 || slots.size < @max_size
+    array = [@items, @weapons, @armors][slot.item_type]
+    array.each { |i|
+      if i.item_id > slot.item_id
+        break
+      elsif i.item_id == slot.item_id
+        l = $game_party.stack_item(i.item_id)
+        x = slot.item.is_a?(RPG::Item) ? l : 1
+        break if i.space_left == 0
+        return true if i.space_left < x
+      end }
+    return false
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Equals?
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def == (other)
+    return false unless other.is_a? (Game_LimitedInventory)
+    return false if @max_size != other.max_size
+    return false if slots != other.slots
+    return super (other)
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Cek Amount
+  #    cek amount of an item in the inventory
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def cek_amount(type, id)
+    array = case type
+    when 0 then @items
+    when 1 then @weapons
+    when 2 then @armors
+    end
+    @n = 0
+    array.each { |slot|  @n += slot.amount if slot.item_id == id   }
+    return @n
+  end
+end
+
+#==============================================================================
+# ** Window_Item
+#------------------------------------------------------------------------------
+#  The Item Grid Window. Based off a 10 column coding.
+#==============================================================================
+class Window_Item_Fake_Grid < Window_Selectable_Drago
+ #--------------------------------------------------------------------------
+ # * Public Instance Variables
+ #--------------------------------------------------------------------------
+ attr_accessor :item,:item_max
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(inventory = $game_party.limit_inventory,
+                 discard = $game_temp.slots_to_discard )
+    if inventory.is_a?(String)
+      s = eval(inventory)
+      inventory = nil
+    else
+      s = inventory.is_a?(Array) ? inventory.size : 
+           $game_party.limit_inventory.max_size
+    end 
+    if s >= 35 &&  $scene.is_a?(Scene_Loot)
+      super(55, 160, 200+32, 32*6)
+      @column_max = 6
+    else
+      if s <= 6 then super(100, 200, 200-32*2, 32*3)
+      elsif s <= 10 then super(100, 200, 200, 32*3)
+      elsif s <= 15 then super(100, 200, 200, 32*4)
+      elsif s <= 24 then super(80, 180, 200+32, 32*5)
+      elsif s <= 30 then super(80, 160, 200+32, 32*6)
+      elsif s <= 42 then super(60, 140, 200+32*2, 32*7)
+      elsif s <= 49 then super(60, 120, 200+32*2, 32*8)
+      elsif s <= 56 then super(40, 120, 200+32*3, 32*8)
+      elsif s <= 64 then super(40, 100, 200+32*3, 32*9)
+      elsif s <= 72 then super(20, 100, 200+32*4, 32*9)
+      elsif s <= 81 then super(20, 70, 200+32*4, 32*10)
+      elsif s <= 90 then super(0, 70, 200+32*5, 32*10)
+      elsif s <= 100 then super(0, 70, 200+32*5, 32*10)
+      elsif s <= 110 then super(0, 68, 200+32*5, 32*10)
+      else super(0, 64, 200+32*5, 32*10) 
+      end
+      if s <= 10 then @column_max = 5
+      elsif s <= 15 then @column_max = 5
+      elsif s <= 24 then @column_max = 6
+      elsif s <= 30 then @column_max = 6
+      elsif s <= 42 then @column_max = 7
+      elsif s <= 49 then @column_max = 7
+      elsif s <= 56 then @column_max = 8
+      elsif s <= 64 then @column_max = 8
+      elsif s <= 72 then @column_max = 9
+      elsif s <= 81 then @column_max = 9
+      elsif s <= 90 then @column_max = 10
+      elsif s <= 100 then @column_max = 10
+      elsif s <= 110 then @column_max = 10
+      else @column_max = 10
+      end
+    end
+    @inventory = inventory
+    return self.contents = Bitmap.new(width-32, height-32) if inventory == nil
+    return self.contents = Bitmap.new(width-32, height-32) if discard == nil
+    self.opacity = 0
+    refresh
+    self.index = 0
+    if $game_temp.in_battle && !$BlizzABS
+      self.x = 144
+      self.y = 64
+      self.back_opacity = 250
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Get Inventory
+  #--------------------------------------------------------------------------
+  def inventory() @inventory end
+  #--------------------------------------------------------------------------
+  # * Get Disabled Text Color
+  #--------------------------------------------------------------------------
+  def disabled_color() Color.new(255, 255, 255, 128) end
+  #--------------------------------------------------------------------------
+  # * Update Cursor Rectangle
+  #--------------------------------------------------------------------------
+  def update_cursor_rect
+    return if @inventory == nil
+    return  self.cursor_rect.empty if @index < 0
+    row = @index / @column_max
+    self.top_row = row if row < self.top_row
+    if row > self.top_row + (self.page_row_max - 1)
+      self.top_row = row - (self.page_row_max - 1)
+    end
+    cursor_width = self.width / @column_max - 32
+    cursor_width =  32
+    x = @index % @column_max * (cursor_width)
+    y = @index / @column_max * 32 - self.oy
+    self.cursor_rect.set(x, y, cursor_width, 32)
+  end
+  #--------------------------------------------------------------------------
+  # * Get Item
+  #--------------------------------------------------------------------------
+  def item
+    return nil if @data[self.index] == nil
+    return @data[self.index].item
+  end
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    return if @inventory == nil
+    if self.contents != nil
+      self.contents.dispose
+      self.contents = nil
+    end
+    @data,@text,@align  = [], nil, nil
+    @inventory.slots.each {|slot| @data.push(slot) if slot.item != nil } 
+    @data = @data.sort {|a,b| a.item_id <=> b.item_id }
+    @item_max = @data.size
+    if @data.size > 0
+      self.contents = Bitmap.new(width - 32, row_max * 32)
+      @data.each_index {|i|   draw_item(i)}
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Draw Item
+  #     index : item number
+  #--------------------------------------------------------------------------
+  def draw_item(index)
+    return if @inventory == nil || @data[index] == nil
+    item, number = @data[index].item, @data[index].amount
+    if item.is_a?(RPG::Item) && $game_party.item_can_use?(item.id)
+      self.contents.font.color = normal_color
+    else
+      self.contents.font.color = disabled_color
+    end
+    x = index % @column_max * (32) +2
+    y = index / @column_max * 32
+    s = self.contents.font.size
+    rect = Rect.new(x, y, self.width / @column_max - 32, 32)
+    self.contents.font.size = 18
+    self.contents.fill_rect(rect, Color.new(0, 0, 0, 0))
+    opacity = self.contents.font.color == normal_color ? 255 : 128
+    unless VX
+      bitmap = RPG::Cache.icon(item.icon_name) rescue RPG::Cache.icon('')
+      self.contents.blt(x, y + 4, bitmap, Rect.new(0, 0, 24, 24), opacity)
+    else
+      draw_icon(item.icon_index, x, y, opacity == 255)
+    end
+    if item.is_a?(RPG::Item) && number > 1
+      a = "/#{$game_party.stack_item(item.id)}" if LiTTleDRAgo::SHOW_ITEM_STACK
+      self.contents.font.size = 16
+      self.contents.draw_text(x + 2-5, y + 9+1, 32, 32, "#{number}#{a}", 2) 
+     end
+     self.contents.font.size = s
+  end
+  #--------------------------------------------------------------------------
+  # * Set Text
+  #--------------------------------------------------------------------------
+  def set_text(text, align = 0)
+    if text != @text or align != @align
+      self.contents.clear
+      self.contents.font.color = normal_color
+      #draw_colored_words(4, 0, self.width - 40, 32, text)
+      self.contents.draw_text(4, 0, self.width - 40, 32, text, align)
+      @text,@align = text, align
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Draw Colored Words
+  #--------------------------------------------------------------------------
+  def draw_colored_words(x,y,width,height,message='',align=0)
+    xx = [0, self.contents.font.color.dup]
+    t = message.clone
+    t.gsub!(/ : /) { "\c[0] : " }
+    t.gsub!(/\\[Cc]\[([0-9]+)\]/) { "\001[#{$1}]" }
+    while ((c = t.slice!(/./m)) != nil)
+      if c == "\001"
+        t.sub!(/\[([0-9]+)\]/, "")
+        self.contents.font.color = text_color($1.to_i)
+        next
+      end
+      self.contents.draw_text(x + xx[0], y, width, height, c)
+      xx[0] += self.contents.text_size(c).width
+    end
+    self.contents.font.color = xx[1]
+  end
+  #------------------------------------------------------------------------
+  # * Update Help Text
+  #------------------------------------------------------------------------
+  def update_help
+    i = @help_window.is_a?(Window_Welcome) ?  
+    @help_window.set_text(self.item.nil? ? '' : 
+      "#{self.item.true_name} : #{self.item.description}",0,self.item) : 
+    @help_window.set_text(self.item.nil? ? '' : 
+      "#{self.item.name} : #{self.item.description}")
+  end
+end 
+#==============================================================================
+# ** Window Item Count
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#  Class for title of the inventory
+#==============================================================================
+class Window_Item_Count < Window_Base
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #    inventory >> an Game_LimitedInventory object
+  #--------------------------------------------------------------------------
+  def initialize(inventory)
+    super(0, 64+15, 320, 64)
+    @inventory = inventory
+    self.x = 320 if inventory == $game_temp.slots_to_discard
+    self.contents = Bitmap.new(width - 32, height - 32)
+    self.contents.font.name = "Sylfaen"
+    refresh
+  end
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    self.contents.clear
+    width = self.contents.width
+    actor = $game_actors[$game_party.inventory].name rescue ''
+    text = sprintf(LiTTleDRAgo::PARTY_INV,actor)
+    if @inventory == $game_party.limit_inventory
+      self.contents.draw_text(0,0,width,32,text)
+      self.contents.draw_text(0,0,width,32,@inventory.slots.size.to_s + " / " + @inventory.max_size.to_s,2)
+    else
+      self.contents.draw_text(0,0,width,32,LiTTleDRAgo::LOOT_INV)
+    end
+  end
+end
+
+class Window_Eq_Show < Window_Base
+  def initialize(actor=nil)
+    super(0, 152, 200, 176)
+    @actor = actor
+    self.contents = Bitmap.new(width - 32, height - 32)
+    return if actor.nil?
+    refresh
+  end
+  def refresh(s=nil)
+    @actor = s if !s.nil?
+    @arm = [] if @arm.nil?
+    if !@actor.nil? && (@actor != @old_act || 
+      @actor.weapon_id != @arm[0] ||
+      @actor.armor1_id != @arm[1] ||
+      @actor.armor2_id != @arm[2] ||
+      @actor.armor3_id != @arm[3] ||
+      @actor.armor4_id != @arm[4])
+      @old_act = @actor
+      @arm = [@actor.weapon_id, @actor.armor1_id, @actor.armor2_id,
+              @actor.armor3_id, @actor.armor4_id]
+      self.contents.clear 
+      self.contents.font.color = system_color
+      draw_item_name($data_weapons[@arm[0]], 0 , 0)
+      draw_item_name($data_armors[@arm[1]], 0 , 28*1)
+      draw_item_name($data_armors[@arm[2]], 0 , 28*2)
+      draw_item_name($data_armors[@arm[3]], 0 , 28*3)
+      draw_item_name($data_armors[@arm[4]], 0 , 28*4)
+    end
+  end
+end
+
+#==============================================================================
+# ** Scene_Item
+#------------------------------------------------------------------------------
+#  This class performs item screen processing.
+#==============================================================================
+
+class Scene_Item
+  @@z = 2000
+  #--------------------------------------------------------------------------
+  # * Initialize
+  #--------------------------------------------------------------------------
+  def initialize(inv=$game_party.inventory)
+    $game_temp.inventory = $game_party.inventory
+    $game_party.switch_inventory(inv)
+  end
+  #--------------------------------------------------------------------------
+  # * Main Processing
+  #--------------------------------------------------------------------------
+  def main
+    @sta_window = {}
+    @sta_window['help'] = Window_Help.new
+    @sta_window['help'].z = @@z 
+    @sta_window['help'].x = 999
+    @item_window = [  Window_Item_Fake_Grid.new, 
+                      Window_Item_Fake_Grid.new]
+    @item_window.each {|i| i.help_window = @sta_window['help'] }
+    @item_window[2] = Window_Item_Fake_Grid.new(nil)
+    create_inv_com_window
+    create_input_number
+    @all_window = [ @sta_window['stat']   = Window_Welcome.new('statistic'),
+                    @sta_window['well']   = Window_Welcome.new,
+                    @sta_window['target'] = Window_Target.new,
+                    @sta_window['eq']     = Window_Eq_Show.new,
+                    @inpnum_window, @sta_window['help'], @item_window, @invcom_window]
+    @sta_window['stat'].x = 999
+    @sta_window['eq'].active = 
+    @sta_window['target'].active = 
+    @sta_window['target'].visible = 
+    @item_window[1].active = 
+    @item_window[1].visible = false
+    @item_window.each {|i| i.z += @@z }
+    @item_window[2].z = @item_window[0].z - 10
+    @sta_window['target'].z = @item_window[0].z + 50
+    @sta_window['eq'].x = -200
+    @sta_window['eq'].z = @item_window[0].z + 100
+    @sta_window['well'].refresh
+    @sta_window['stat'].y -= 40
+    @sta_window['stat'].z = @@z - 1
+    @sta_window['well'].y = 405
+    @sta_window['well'].x = -200
+    @sta_window['well'].z = @sta_window['stat'].z + 2
+    unless $drg_inv_sys_no_layout 
+      @sta_window['well'].opacity = 0
+      @sta_window['well'].contents_opacity = 0
+    end
+    Graphics.transition(LiTTleDRAgo::TRAN_TIME, 'Graphics/Transitions/' + 
+          LiTTleDRAgo::TRAN_TYPE) rescue Graphics.transition
+    while $scene == self 
+      [Graphics,Input].each {|i| i.update}
+      update
+    end
+    30.times {    @sta_window['well'].x += 20
+                  @sta_window['help'].x += 20
+                  @item_window.each {|i| i.x += 20 }
+                  @sta_window['eq'].x -= 20
+                  @sta_window['stat'].x += 15
+                  Graphics.update  
+                  @item_lay.opacity -= 15
+                  @item_lay.zoom_x += 0.2
+                  @sta_window['help'].contents_opacity -= 15     }
+    Graphics.freeze
+    @all_window.each {|i| i.dispose rescue nil } 
+    exit_normalize_inventory
+    return unless !$game_temp.slots_to_discard.slots.empty? && 
+                               !$scene.is_a?(Scene_Gameover)
+    $scene = Scene_Loot.new($game_party.inventory)
+  end
+  #--------------------------------------------------------------------------
+  # * create_input_number
+  #--------------------------------------------------------------------------
+  def create_input_number
+    @inpnum_window = [ Window_InputNumber.new(4),
+                       Window_Item_Fake_Grid.new('6')]
+    @inpnum_window.each {|i| i.x = 258
+                             i.y = 150
+                             i.z = @@z + 300 + 50 
+                             i.visible = i.active = false}
+    @inpnum_window[0].y += 32
+    @inpnum_window[0].x += 12
+    @inpnum_window[1].set_text(LiTTleDRAgo::ASK_MANY,1)
+  end
+  #--------------------------------------------------------------------------
+  # * exit_normalize_inventory
+  #--------------------------------------------------------------------------
+  def exit_normalize_inventory
+    Graphics.resize_screen($game_temp_screen[0],$game_temp_screen[1]) if VX
+    return if $game_temp.inventory.nil?
+    return unless $game_temp.inventory != $game_party.inventory
+    $game_party.switch_inventory($game_temp.inventory)
+  end
+  #--------------------------------------------------------------------------
+  # * create_inv_com_window
+  #--------------------------------------------------------------------------
+  def create_inv_com_window
+    comb = combine_not_exist? ? '' : LiTTleDRAgo::COMBINE_COM
+    equ  = equip_not_exist?   ? '' : LiTTleDRAgo::EQ_COM
+    del  = [LiTTleDRAgo::DIS_COM, LiTTleDRAgo::CANCEL_COM]
+    use  = LiTTleDRAgo::USE_COM
+    nocb = combine_not_exist? ||  $game_party.disable_combine
+    noeq = equip_not_exist? || $game_party.disable_equip
+    tra  = transfer_com
+    command_item = tra != '' && !bypass_one_actor?(1) ? 
+              (nocb ? [use,tra,del[0],del[1]] : [use,tra,comb,del[0]]) :
+              (nocb ? [use,del].flatten       : [use, comb, del[0]] ) 
+    command_weap = tra != '' && !bypass_one_actor?(1)  ?
+              (nocb ? noeq ? [del[0],tra,del[1]] : [equ,tra,del[0]] :
+               noeq ? [comb,tra,del[0],del[1]] : [comb,tra,equ,del[0]]) :
+              (nocb ? noeq ? [del].flatten : [equ,del[0]] :
+               noeq ? [comb,del[0],del[1]] : [comb,equ,del[0]])        
+    @invcom_window = [Window_Command.new(160, command_item),
+                      Window_Command.new(160, command_weap),
+                      Window_Command.new(160,[comb,del[1]]),
+                      Window_Command.new(190,['',''])]
+    @invcom_window.each_with_index {|i,s|  i.x = s == 3 ? 228 : 258
+                              i.y = 160 + 1*32 
+                              i.z = @@z + @item_window[0].z + 200
+                              i.active = i.visible = false }
+  end
+  #--------------------------------------------------------------------------
+  # * Frame Update
+  #--------------------------------------------------------------------------
+  def update
+    @sta_window['well'].update
+    @sta_window['help'].update
+    @item_window[0].update
+    @sta_window['stat'].x = [@sta_window['stat'].x - 10,352].max
+    @sta_window['well'].x = [@sta_window['well'].x+10,0].min
+    welcome_opac = @sta_window['well'].contents_opacity
+    @sta_window['well'].contents_opacity = [welcome_opac+15,255].max   
+    if @equip_window_active
+      @sta_window['eq'].active = true
+      @actor = $game_party.actors[@sta_window['target'].index]
+      @sta_window['eq'].refresh(@actor)
+      @sta_window['eq'].x = [@sta_window['eq'].x+10,0].min
+    else
+      if @sta_window['eq'].x > -200
+        @actor = $game_party.actors[@sta_window['target'].index]
+        @sta_window['eq'].refresh(@actor)
+        @sta_window['eq'].x -= 10
+      elsif @sta_window['eq'].x <= -200
+        @sta_window['eq'].active = false
+      end
+    end
+    if @item_window[0].active
+      update_item
+      update_stats
+      if VX
+        @sta_window['stat'].x += 1
+        @sta_window['stat'].x -= 1
+      end
+      @sta_window['stat'].visible = @item != nil
+      return
+    end
+    if @invcom_window[0].active || @invcom_window[1].active ||
+      @invcom_window[3].active || @inpnum_window[0].active
+      @invcom_window.each {|i| i.update if i.active }
+      check_max_input
+      return update_command
+    end
+    if @sta_window['target'].active
+      @sta_window['target'].update
+      return update_target
+    end
+    if @item_window[1].active
+      @item_window[1].update
+      update_stats
+      update_combine
+      return 
+    end
+    if @invcom_window[2].active
+      @invcom_window[2].update 
+      return update_command
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * check_max_input
+  #--------------------------------------------------------------------------
+  def check_max_input
+    @inpnum_window[0].update if @inpnum_window[0].active
+    return unless @inpnum_window[0].number > (@number_item || 0) 
+    @inpnum_window[0].number, @number_overload = !@number_overload ? 
+          [@number_item, true] : [0 , false]
+  end
+  #--------------------------------------------------------------------------
+  # * Update Command Window
+  #--------------------------------------------------------------------------
+  def update_command
+    if Input.trigger?(Input::B)
+      return cancel_combination
+    end
+    if Input.trigger?(Input::C)
+      if @item.is_a?(RPG::Item) && @invcom_window[0].active && 
+        !@invcom_window[2].active && !@invcom_window[3].active
+        nocomb = combine_not_exist? || $game_party.disable_combine
+        if @invcom_window[1].commands.size != 4
+          case @invcom_window[0].index
+          when 0 then use_item
+          when 1 then nocomb ? discard_item : combine_item
+          when 2 then nocomb ? cancel_combination : discard_item
+          end
+        else
+          case @invcom_window[0].index
+          when 0 then use_item
+          when 1 then transfer_item
+          when 2 then nocomb ? discard_item : combine_item
+          when 3 then nocomb ? cancel_combination : discard_item
+          end
+        end
+      elsif (@item.is_a?(RPG::Weapon) || @item.is_a?(RPG::Armor)) && 
+        @invcom_window[1].active && !@invcom_window[3].active
+        noeq = equip_not_exist? || $game_party.disable_equip
+        nocomb = 0
+        nocomb += 1 if @invcom_window[1].commands.size == 2
+        if @invcom_window[1].commands.size != 4
+          case @invcom_window[1].index + nocomb
+          when 0 then combine_item
+          when 1 then noeq ? discard_item : equip_item
+          when 2 then noeq ? cancel_combination : discard_item
+          end
+        else
+          case @invcom_window[1].index + nocomb
+          when 0 then combine_item
+          when 1 then transfer_item
+          when 2 then noeq ? discard_item : equip_item
+          when 3 then noeq ? cancel_combination : discard_item
+          end
+        end
+      elsif @invcom_window[2].active && !@invcom_window[0].active
+        case @invcom_window[2].index
+        when 0 then combination
+        when 1 then cancel_combination
+        end
+      elsif @invcom_window[3].active
+        case @invcom_window[3].index
+        when 0 then update_unequip(0)
+        when 1 then update_unequip(1)
+        when 2 then cancel_combination
+        end
+      elsif @inpnum_window[0].active
+        discard_item_value  if @number_purpose == 'Discard'
+        transfer_item_value if @number_purpose == 'Transfer'
+      end
+      @invcom_window.each {|i| i.index = 0 }
+      return
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * combine_not_exist?
+  #--------------------------------------------------------------------------
+  def combine_not_exist?
+    mtd = [LiTTleDRAgo::COMBINE_ITEM,LiTTleDRAgo::COMBINE_COM] rescue []
+    result = mtd[0].nil? || mtd[0] == {} || mtd[0] == [] ||
+            mtd[1].nil? || mtd[1] == '' 
+    return result
+  end
+  #--------------------------------------------------------------------------
+  # * transfer_com
+  #--------------------------------------------------------------------------
+  def transfer_com()  LiTTleDRAgo::TRANSFER_COM || '' rescue ''  end
+  #--------------------------------------------------------------------------
+  # * equip_not_exist?
+  #--------------------------------------------------------------------------
+  def equip_not_exist?
+    result = LiTTleDRAgo::EQ_COM.nil? || 
+             LiTTleDRAgo::EQ_COM == '' rescue true
+    return result
+  end
+  #--------------------------------------------------------------------------
+  # * cancel_combination
+  #--------------------------------------------------------------------------
+  def cancel_combination
+    sound_play('cancel')
+    discard_item_value(0) if @inpnum_window[0].active
+    @item_window[0].active  = true  unless @inpnum_window[0].active
+    @item_window[0].visible = true  unless @inpnum_window[0].active
+    @item_window[1].active  = false unless @inpnum_window[0].active
+    @item_window[1].visible = false unless @inpnum_window[0].active
+    @invcom_window.each {|i|  i.active = i.visible = false }
+    @inpnum_window.each {|i|  i.active = i.visible = false }
+    @equip_window_active = @number_overload = nil
+    @sta_window['well'].refresh
+    @number_item = 0
+    return
+  end
+  #--------------------------------------------------------------------------
+  # * Use Item Processing
+  #--------------------------------------------------------------------------
+  def equip_item
+    @sta_window['eq'].refresh(@actor) if !@sta_window['eq'].nil?
+    return sound_play('buzzer') if @item.is_a?(RPG::Item) 
+    sound_play('decision')
+    @invcom_window.each {|i|  i.active = i.visible = false }
+    @sta_window['target'].active  = 
+    @sta_window['target'].visible = 
+    @equip_window_active = true
+    @sta_window['target'].index = 0
+
+    @sta_window['well'].set_text(LiTTleDRAgo::EQUIP_WELCOME)
+  end  
+  #--------------------------------------------------------------------------
+  # * transfer_item_update
+  #--------------------------------------------------------------------------
+  def transfer_item_update
+    @transfer_flag = false
+    slot = @item_window[0].inventory.slot(@item) rescue nil
+    return sound_play('buzzer') if slot.nil?
+    type, id, @number_item = slot.item_type, slot.item_id, slot.amount
+    return sound_play('buzzer') if LiTTleDRAgo::NONDISCARD[type].include?(id)
+    sound_play('decision')
+    @invcom_window.each {|i| i.active = i.visible = false }
+    @inpnum_window.each {|i| i.active = i.visible = true  }
+    @inpnum_window[0].number = 0
+    @number_purpose = 'Transfer'
+  end
+  #--------------------------------------------------------------------------
+  # * transfer_item_value
+  #--------------------------------------------------------------------------
+  def transfer_item_value
+    @transfer_flag = false
+    @actor = $game_party.actors[@sta_window['target'].index]
+    sound_play('decision')
+    inv, n = $game_party.inventory, @inpnum_window[0].number
+    n.times { $game_party.transfer_process(@item,1,inv,@actor.id) }
+    @item_window.each {|i| i.refresh }
+    @inpnum_window.each {|i| i.active = i.visible = false }
+    @item_window[0].active = true
+    @sta_window['target'].active  = 
+    @sta_window['target'].visible = false
+    @item_window[0].index = [[@item_window[0].index,0].max,
+                              @item_window[0].item_max-1].min
+    @sta_window['well'].refresh
+    @must_update = true
+  end
+  #--------------------------------------------------------------------------
+  # * Discard Item Processing
+  #--------------------------------------------------------------------------
+  def discard_item
+    slot = @item_window[0].inventory.slot_reverse(@item) rescue nil
+    return if slot.nil?
+    type, id, @number_item = slot.item_type, slot.item_id, item_number(@item)
+    return sound_play('buzzer') if LiTTleDRAgo::NONDISCARD[type].include?(id)
+    sound_play('decision')
+    @invcom_window.each {|i| i.active = i.visible = false }
+    @inpnum_window.each {|i| i.active = i.visible = true  }
+    @inpnum_window[0].number = 0
+    @number_purpose = 'Discard'
+  end
+  #--------------------------------------------------------------------------
+  # * discard_item_value
+  #--------------------------------------------------------------------------
+  def discard_item_value(number = @inpnum_window[0].number)
+    slot = @item_window[0].inventory.slot_reverse(@item) rescue nil
+    return if slot.nil?
+    type, id, n = slot.item_type, slot.item_id, number
+    return sound_play('buzzer') if LiTTleDRAgo::NONDISCARD[type].include?(id)
+    sound_play(number > 0 ? 'decision' : 'cancel') 
+    $game_party.no_multi_use = true
+    n.times {  $game_party.lose_item(@item, 1) if item_number(@item) > 0  }
+    @sta_window['well'].refresh
+    @item_window.each {|i| i.refresh }
+    @inpnum_window.each {|i| i.active = i.visible = false }
+    @item_window[0].active = true
+    @item_window[0].index = [[@item_window[0].index-1,0].max,
+                              @item_window[0].item_max-1].min
+    $game_party.no_multi_use = false
+    @equip_window_active = false
+    @must_update = true
+  end
+  #--------------------------------------------------------------------------
+  # * Transfer Item Processing
+  #--------------------------------------------------------------------------
+  def transfer_item
+    sound_play('decision')
+    @invcom_window.each {|i|  i.active = i.visible = false }
+    @sta_window['target'].active  =  
+    @sta_window['target'].visible = true
+    @equip_window_active = false
+    @sta_window['target'].index = 0
+    @transfer_flag = true
+  end
+  #--------------------------------------------------------------------------
+  # * Use Item Processing
+  #--------------------------------------------------------------------------
+  def use_item
+    unless @item.is_a?(RPG::Item) || $game_party.item_can_use?(@item.id)
+      return sound_play('buzzer')
+    end
+    sound_play('decision') unless bypass_one_actor?
+    if @item.scope >= 3
+      @invcom_window.each {|i|  i.active = i.visible = false }
+      @sta_window['target'].active  = true
+      @sta_window['target'].visible = bypass_one_actor? ? false : true  
+      @equip_window_active = false
+      if @item.scope == 4 || @item.scope == 6
+        @sta_window['target'].index = -1
+      else
+        @sta_window['target'].index = 0
+      end
+    else
+      if @item.common_event_id > 0
+        $game_temp.common_event_id = @item.common_event_id
+        sound_play('use_item')
+        if @item.consumable
+          @sta_window['well'].refresh
+          $game_party.lose_item(@item.id, 1)
+          @item_window[0].draw_item(@item_window[0].index)
+        end
+        return $scene = Scene_Map.new
+      end
+    end
+  end  
+  #--------------------------------------------------------------------------
+  # * Use Item Processing
+  #--------------------------------------------------------------------------
+  def combine_item
+    sound_play('decision')
+    @invcom_window.each {|i| i.active = i.visible = false }
+    @invcom_window[2].active  = true
+    @invcom_window[2].visible = false
+    @item_window.each_with_index {|i,s| 
+              i.active = i.visible = s == 0 ? false : true } 
+    @equip_window_active = false
+    @item_window[1].index = 0
+  end  
+  #--------------------------------------------------------------------------
+  # * Frame Update (combine item window is active)
+  #--------------------------------------------------------------------------
+  def update_combine
+    if Input.trigger?(Input::B)
+      sound_play('cancel')
+      return $scene = Scene_Menu.new(0)
+    end
+    if Input.trigger?(Input::C)
+      @item_1 = @item_window[0].item
+      @item_2 = @item_window[1].item
+      if @item_1 != nil && @item_2 != nil
+        c = combine_result rescue nil
+        c.nil? ? @invcom_window[2].disable_item(0) : @invcom_window[2].refresh 
+        @invcom_window.each {|i| i.active = i.visible = false }
+        @invcom_window[2].active  = 
+        @invcom_window[2].visible = true
+        @item_window[1].active =  
+        @equip_window_active = false
+        @number_item = 0
+      else
+        sound_play('buzzer')
+      end
+      return
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Frame Update (when item window is active)
+  #--------------------------------------------------------------------------
+  def update_item
+    if Input.trigger?(Input::B)
+      sound_play('cancel')
+      return $scene = Scene_Menu.new(0)
+    end
+    if Input.trigger?(Input::C)
+      @item = @item_window[0].item
+      if @item != nil
+        sound_play('decision')
+        if @item.is_a?(RPG::Item)
+          @invcom_window.each {|i| i.active = i.visible = false }
+          @invcom_window[0].active  =  
+          @invcom_window[0].visible = true
+          @item_window[0].active = false
+        elsif @item.is_a?(RPG::Weapon) || @item.is_a?(RPG::Armor)
+          @invcom_window.each {|i| i.active = i.visible = false }
+          @invcom_window[1].active  =  
+          @invcom_window[1].visible = true
+          @item_window[0].active =  
+          @equip_window_active      = false
+        end
+      else
+        sound_play('buzzer')
+      end
+      return
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * update_unequip
+  #--------------------------------------------------------------------------
+  def update_unequip(type=0,siz=$game_party.limit_inventory.slots.size >= 
+                     $game_party.limit_inventory.max_size)
+    if type == 0
+      if @item.is_a?(RPG::Weapon) && !@actor.equip_fix?(0) && !siz
+        @actor.equip(0, 0)
+        sound_play('equip')
+      elsif @item.is_a?(RPG::Armor)&& !@actor.equip_fix?(@item.kind+1) && !siz
+        @actor.equip(@item.kind+1, 0)
+        sound_play('equip')
+      else
+        sound_play('buzzer')
+        @sta_window['well'].set_text(LiTTleDRAgo::FULL_INVENTORY) if siz
+      end
+    else
+      @play_unequip = []
+      (0...4).each {|i| @play_unequip[1] = 
+                           ($game_party.limit_inventory.slots.size >= 
+                            $game_party.limit_inventory.max_size)
+                        unless @actor.equip_fix?(i) || @play_unequip[1]
+                          @actor.equip(i, 0)
+                          @play_unequip[0] = true
+                        end}
+      @play_unequip[0] ? sound_play('equip') : sound_play('buzzer')
+      @sta_window['well'].set_text(LiTTleDRAgo::FULL_INVENTORY) if @play_unequip[1]
+    end
+    @item_window.each {|i| i.refresh }
+    @invcom_window[3].active  =  
+    @invcom_window[3].visible = false
+    @sta_window['target'].visible =  
+    @sta_window['target'].active  = true
+  end
+  #--------------------------------------------------------------------------
+  # * cancel_target
+  #--------------------------------------------------------------------------
+  def cancel_target
+    @item_window.each {|i| i.refresh }
+    @item_window[0].active = true
+    @sta_window['target'].visible =  
+    @sta_window['target'].active  = false
+    @sta_window['well'].refresh
+    @equip_window_active = nil
+  end
+  #--------------------------------------------------------------------------
+  # * update_target
+  #--------------------------------------------------------------------------
+  def update_target
+    if Input.trigger?(Input::B)
+      sound_play('cancel')
+      return cancel_target
+    end
+    if @transfer_flag 
+      transfer_item_update if Input.trigger?(Input::C)
+      return
+    end
+    if Input.trigger?(Input::A)
+      @actor = $game_party.actors[@sta_window['target'].index]
+      if @item.is_a?(RPG::Weapon) || @item.is_a?(RPG::Armor)
+        sound_play('decision')
+        del = [LiTTleDRAgo::UNEQUIP_COM, LiTTleDRAgo::UNEQUIPALL_COM,
+              LiTTleDRAgo::CANCEL_COM]
+        items = case @item
+        when RPG::Weapon then 'Weapon'
+        when RPG::Armor then VX ? eval("Vocab.armor#{@item.kind + 1}") :
+                             $data_system.words.send("armor#{@item.kind + 1}")
+        end
+        @invcom_window[3].commands = ["#{del[0]} #{items}" ,del[1], del[2]]
+        @invcom_window[3].refresh
+        @invcom_window[3].active  =  
+        @invcom_window[3].visible = true
+        @sta_window['target'].visible =  
+        @sta_window['target'].active  = false
+        return @must_update = true
+      end
+    end
+    if Input.trigger?(Input::C) || bypass_one_actor?
+      @actor = $game_party.actors[@sta_window['target'].index]
+      if @item.is_a?(RPG::Weapon) || @item.is_a?(RPG::Armor)
+        if !@actor.equippable?(@item) ||
+         (@item.is_a?(RPG::Weapon) && @actor.equip_fix?(0)) ||
+         (@item.is_a?(RPG::Armor) && @actor.equip_fix?(@item.kind+1))
+          cancel_target if bypass_one_actor?
+          return sound_play('buzzer')
+        end
+        sound_play('equip')
+        if @item.is_a?(RPG::Weapon)
+          @actor.equip(0, @item.nil? ? 0 : @item.id)
+        elsif @item.is_a?(RPG::Armor)
+          @actor.equip(@item.kind+1, @item.nil? ? 0 : @item.id)
+        end
+        @sta_window['eq'].refresh(@actor)
+        @item_window[0].refresh    
+        return @must_update = true
+      end
+      return sound_play('buzzer') if $game_party.item_number(@item.id) == 0   
+      if @sta_window['target'].index == -1
+        used = false
+        for i in $game_party.actors
+          used |= i.item_effect(@item)
+        end
+      end
+      if @sta_window['target'].index >= 0
+        target = $game_party.actors[@sta_window['target'].index]
+        used = target.item_effect(@item)
+      end
+      if used
+        sound_play('use_item')
+        if @item.consumable
+          $game_party.lose_item(@item.id, 1)
+          @item_window[0].draw_item(@item_window[0].index)
+          @item_window[0].refresh
+          @sta_window['well'].refresh
+        end
+        @sta_window['target'].refresh
+        return $scene = Scene_Gameover.new if $game_party.all_dead?
+        if @item.common_event_id > 0
+          $game_temp.common_event_id = @item.common_event_id
+          return $scene = Scene_Map.new
+        end
+      end
+      cancel_target if bypass_one_actor?
+      sound_play('buzzer') unless used
+      return
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Bypass one actor
+  #--------------------------------------------------------------------------
+  def bypass_one_actor?(type=0)
+    return true if $game_party.actors.size == 1 && type == 1
+    return true if $game_party.actors.size == 1 && 
+                   @item.is_a?(RPG::Item) && type == 0
+  end
+  #--------------------------------------------------------------------------
+  # * Combine Result
+  #--------------------------------------------------------------------------
+  def combine_result
+    req, com = [], LiTTleDRAgo::COMBINE_ITEM
+    req[0] = case @item_1
+    when RPG::Item then 'Item(' + @item_1.id.to_s + ')'
+    when RPG::Weapon then 'Weapon(' + @item_1.id.to_s + ')'
+    when RPG::Armor then 'Armor(' + @item_1.id.to_s + ')'
+    end
+    req[1] = case @item_2
+    when RPG::Item then 'Item(' + @item_2.id.to_s + ')'
+    when RPG::Weapon then 'Weapon(' + @item_2.id.to_s + ')'
+    when RPG::Armor then 'Armor(' + @item_2.id.to_s + ')'
+    end
+    req[3] = com[req[0] + ' + ' + req[1]] rescue nil
+    req[3] = req[3] ? req[3] : com[req[1] + ' + ' + req[0]] rescue '' 
+    if req[3] =~ /item/i 
+      item = req[3].downcase.gsub(/item\(([0-9]+)\)/) { $1 }
+      item = $data_items[item.to_i]
+    elsif req[3] =~ /weapon/i 
+      item = req[3].downcase.gsub(/weapon\(([0-9]+)\)/) { $1 }
+      item = $data_weapons[item.to_i]
+    elsif req[3] =~ /armor/i 
+      item = req[3].downcase.gsub(/armor\(([0-9]+)\)/) { $1 }
+      item = $data_armors[item.to_i]
+    end
+    return item
+  end
+  #--------------------------------------------------------------------------
+  # * Item Number
+  #--------------------------------------------------------------------------
+  def item_number(item) 
+    case item 
+    when RPG::Item   then $game_party.item_number(item.id) 
+    when RPG::Weapon then $game_party.weapon_number(item.id) 
+    when RPG::Armor  then $game_party.armor_number(item.id) 
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Combination
+  #--------------------------------------------------------------------------
+  def combination
+    c = combine_result rescue nil
+    number = [item_number(@item_1), item_number(@item_2)]
+    if c != nil && ((@item_1 != @item_2 && number[0] > 0 && number[1] > 0) ||
+      (@item_1 == @item_2 && number[0] > 1))
+      number[2],text = item_number(c),LiTTleDRAgo::GET_COMB
+      stack = c.is_a?(RPG::Item) ? $game_party.stack_item(c.id) : 1
+      if slot.size>=limit_max && (number[2] <= 0 || (number[2]%stack) == 0) && 
+        ((@item_1 != @item_2 && number[0] > 1 && number[1] > 1) || 
+        (@item_1 == @item_2 && number[0] > 2))
+        @sta_window['well'].refresh(LiTTleDRAgo::FULL_INVENTORY)
+        return sound_play('buzzer')
+      end
+      $game_party.lose_item(@item_1,1)
+      $game_party.lose_item(@item_2,1)
+      $game_party.gain_item(c,1)
+      @item_window.each {|i| i.refresh }        
+      @number_item = (@number_item || 0) + 1
+      @sta_window['well'].set_text(sprintf(text, c.name,@number_item))
+      cancel_combination if item_number(@item_1) <= 0||item_number(@item_2) <= 0
+      @must_update = true
+      sound = LiTTleDRAgo::SOUND_COMBINE rescue ''
+      return Audio.se_play("Audio/SE/#{sound}", 80, 100) rescue nil
+    else
+      return sound_play('buzzer')
+    end
+  end
+  
+  def slot()            $game_party.limit_inventory.slots    end
+  def limit_max()       $game_party.limit_inventory.max_size end
+  #--------------------------------------------------------------------------
+  # Sound Play
+  #--------------------------------------------------------------------------
+  def sound_play(se)
+    case se
+    when 'cursor'
+      VX ? Sound.play_cursor : $game_system.se_play($data_system.cursor_se)
+    when 'cancel'
+      VX ? Sound.play_cancel : $game_system.se_play($data_system.cancel_se)
+    when 'equip'
+      VX ? Sound.play_equip : $game_system.se_play($data_system.equip_se)
+    when 'use_item'
+      VX ? Sound.play_use_item : $game_system.se_play(@item.menu_se)
+    when 'decision'
+      VX ? VXA ? Sound.play_ok : Sound.play_decision : 
+      $game_system.se_play($data_system.decision_se)
+    when 'buzzer'
+      VX ? Sound.play_buzzer : $game_system.se_play($data_system.buzzer_se)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * report_no_star
+  #--------------------------------------------------------------------------
+  def report_missing_image(image,loc)
+    return unless $DEBUG || $TEST
+    bit = Bitmap.new(480, 72)
+    bit.font.size = 16
+    bit.font.bold = true
+    bit.draw_text(4,52,472,24, 
+              "Image #{image} can\'t be found at folder #{loc}.", 1) 
+    Graphics.freeze 
+    $spr = Sprite.new
+    $spr.bitmap = bit
+    $spr.x, $spr.y = 320-(472/2), 240-(72/2)
+    $spr.z = 1000
+    Graphics.transition
+    3600.times  {  [Graphics,Input].each {|i| i.update }
+                    break if Input.trigger?(Input::C)  }
+    Graphics.freeze
+    $spr.bitmap.dispose 
+    $spr.dispose
+    Graphics.transition
+  end
+  #--------------------------------------------------------------------------
+  # * Create Layout
+  #--------------------------------------------------------------------------
+  def create_layout
+    $game_temp_screen = [Graphics.width,Graphics.height] if VX
+    Graphics.resize_screen(640,480) if VX
+    @item_lay, @btm = Sprite.new,'Item_Lay'
+    @map_back = VX ? Spriteset_Map_Drago.new : Spriteset_Map.new
+    @mnback = Plane.new
+    cache = VX ? Cache : RPG::Cache
+    unless $drg_inv_sys_no_layout || @btm == ''
+      image = cache.picture(@btm) rescue ''
+      if image == ''
+        report_missing_image(@btm.to_s,'Pictures')
+        $drg_inv_sys_no_layout,@btm = true,''
+      end
+    else
+      @btm = ''
+    end
+    @item_lay.bitmap = cache.picture(@btm)
+    @item_lay.z = @@z
+    @btm = LiTTleDRAgo::BACKGROUND
+    unless $drg_inv_sys_no_background || @btm == ''
+      image = cache.picture(@btm) rescue cache.windowskin(@btm) rescue ''
+      if image == ''
+        report_missing_image(@btm.to_s,'Pictures')
+        $drg_inv_sys_no_background,@btm = true,''
+      end
+    else
+      @btm = ''
+    end
+    @mnback.bitmap = cache.picture(@btm) rescue cache.windowskin(@btm) rescue ''
+    @mnback.z = @@z-1
+    @mnback.opacity = 155
+    @mnback.blend_type = 0
+  end
+  #--------------------------------------------------------------------------
+  # Update Layout
+  #--------------------------------------------------------------------------
+  def update_layout
+    unless @all_window.include?(@mnback)
+      @all_window << [@mnback,@item_lay,@map_back]
+      @all_window.flatten!
+    end
+    @mnback.visible = true
+    @mnback.ox += 1
+    @mnback.oy += 1
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Aliased Method
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  alias drg112_main main  unless method_defined?(:drg112_main)
+  alias drg112_upd update unless method_defined?(:drg112_upd)
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Main Processing
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def main
+    create_layout
+    drg112_main
+  end
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * Frame Update
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  def update
+    update_layout
+    drg112_upd
+  end
+end #of class
+#==============================================================================
+# ** Scene_Loot
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#  Loot management scene
+#==============================================================================
+class Scene_Loot < Scene_Item
+  #--------------------------------------------------------------------------
+  # * MainProcessing
+  #--------------------------------------------------------------------------
+  define_method(:refresh){[@all_party,@all_loot].flatten.each {|i| i.refresh}}
+  def main
+    dis = $game_temp.slots_to_discard
+    create_layout
+    @all_window = [
+      @help_window     = Window_Welcome.new('help'),
+      @item_window     = Window_Item_Fake_Grid.new,
+      @dummy1_window   = Window_Item_Fake_Grid.new(nil),
+      @loot_window     = Window_Item_Fake_Grid.new(dis),
+      @dummy2_window   = Window_Item_Fake_Grid.new(dis,nil),
+      @party_item_window = Window_Item_Count.new($game_party.limit_inventory),
+      @loot_item_window  = Window_Item_Count.new($game_temp.slots_to_discard)]
+    @item_window.help_window = @help_window
+    @loot_window.help_window = @help_window
+    @loot_window.active = false
+    @loot_window.x = 320
+    @item_window.z = @loot_window.z += @@z + 1
+    @dummy2_window.x = @loot_window.x
+    create_input_number
+    @all_window <<  @inpnum_window
+    @all_dummy = [@dummy1_window,@dummy2_window]
+    @all_party = [@party_item_window,@item_window,@dummy1_window]
+    @all_loot = [@loot_item_window,@loot_window,@dummy2_window]
+    @all_atas = [@party_item_window,@loot_item_window]
+    if true
+      @sprite_qw = Sprite.new
+      @sprite_qw.bitmap = Bitmap.new(640,480)
+      @sprite_qw.bitmap.font.name = "Sylfaen"
+      @sprite_qw.bitmap.font.size = 50
+      @sprite_qw.bitmap.draw_text(0,230,640,72,'  <Q',0)
+      @sprite_qw.bitmap.draw_text(0,230,640,72,'W>  ',2)
+      @sprite_qw.z = @item_window.z
+      @sprite_qw.opacity = 0
+      @all_window << @sprite_qw
+    end
+    @loot_item_window.x = 320
+    @help_window.y = 405
+    @help_window.x = -200
+    @item_window_x = @item_window.x
+    @all_atas.each {|i| i.z = @item_window.z - 200
+                          i.opacity = 180 }
+    @all_party.each {|i| i.x -= 320 }
+    @all_loot.each  {|i| i.x += 320 }
+    @all_dummy.each {|i| i.z = @item_window.z - 100
+                          i.opacity = 180 }
+    unless $drg_inv_sys_no_layout 
+      @help_window.opacity = 0
+      @help_window.contents_opacity = 0
+    end
+    Graphics.transition(LiTTleDRAgo::TRAN_TIME, 'Graphics/Transitions/' + 
+          LiTTleDRAgo::TRAN_TYPE) rescue Graphics.transition
+    while $scene == self
+      [Graphics,Input].each {|i| i.update}
+      update
+    end
+    30.times { [Graphics,Input].each {|i| i.update}
+                @sprite_qw.opacity -= 10
+                @sprite_qw.zoom_x += 0.2
+                @sprite_qw.x -= 22
+                @help_window.x += 15    
+                @all_party.each {|i| i.x -= 10 }
+                @all_loot.each {|i| i.x += 10 }
+                @item_lay.opacity -= 10
+                @item_lay.zoom_x += 0.2}
+    Graphics.freeze
+    @all_window.each {|i| i.dispose  rescue nil }
+    exit_normalize_inventory
+  end
+  #--------------------------------------------------------------------------
+  # * update animated_position
+  #--------------------------------------------------------------------------
+  def update_animated_position
+    @help_window.x = [@help_window.x+10,0].min
+    @help_window.contents_opacity = [@help_window.contents_opacity+15,255].max
+    if @party_item_window.x == 0
+      @sprite_qw.opacity = [@sprite_qw.opacity+15,255].min 
+      if @sprite_qw.oy < 50 && !@below
+        @sprite_qw.oy += 1
+        @below = true if @sprite_qw.oy >= 50
+      elsif @sprite_qw.oy > 0 && @below
+        @sprite_qw.oy -= 1
+        @below = false if @sprite_qw.oy <= 0
+      end
+    end 
+    @all_party.each_with_index {|i,s|  i.x = [i.x + 10, 
+                                s == 0 ? 0 : @item_window_x].min }
+    @all_loot.each_with_index {|i,s| i.x = [i.x - 10, 
+                        320 + (s == 0 ? 0 : (100-@item_window_x).abs)].max }
+  end
+  #--------------------------------------------------------------------------
+  # * update Frame
+  #--------------------------------------------------------------------------
+  def update
+    update_animated_position
+    update_layout
+    if Input.trigger?(Input::B)
+      sound_play('cancel')
+      if @inpnum_window[0].active
+        @inpnum_window.each {|i| i.active = i.visible = false }
+        @item_active = @loot_active = false
+        return
+      end
+      if !$game_temp.slots_to_discard.slots.empty?
+        $game_temp.slots_to_discard.slots.each { |slot|
+          $game_party.reduce_item(slot.item, slot.amount) }
+        $game_temp.slots_to_discard.clear
+      end
+      return  $scene = Scene_Map.new
+    end
+    if @inpnum_window[0].active
+      @inpnum_window[0].update 
+      check_max_input
+    end
+    if @item_window.active
+      @item_window.update unless @item_active
+      return update_item 
+    end
+    if @loot_window.active
+      @loot_window.update unless @loot_active
+      return update_loot 
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Update Item Window
+  #--------------------------------------------------------------------------
+  def update_item
+    if Input.trigger?(Input::C)
+      @inpnum_window[0].active ? item_to_loot_value : item_to_loot
+      return
+    end
+    if Input.repeat?(Input::R)
+      @item_window.active = false
+      @loot_window.active = true
+      @loot_window.index = 0
+      @item_window.index = -1
+      sound_play('decision')
+      return
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * Update Loot Window
+  #--------------------------------------------------------------------------
+  def update_loot
+    if Input.trigger?(Input::C)
+      @inpnum_window[0].active ? loot_to_item_value : loot_to_item
+      return
+    end
+    if Input.repeat?(Input::L)
+      @item_window.active = true
+      @loot_window.active = false
+      @loot_window.index = -1
+      @item_window.index = 0
+      sound_play('decision')
+      return
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * item_to_loot
+  #--------------------------------------------------------------------------
+  def item_to_loot
+    item = @item_window.item
+    return if item.nil?
+    slot = @item_window.inventory.slot(item)
+    type, id, @number_item = slot.item_type, slot.item_id, slot.amount
+    return sound_play('buzzer') if LiTTleDRAgo::NONDISCARD[type].include?(item.id)
+    sound_play('decision')
+    @inpnum_window.each {|i| i.active = i.visible = true }
+    @inpnum_window[0].number = @number_item
+    @item_active = true
+  end
+  #--------------------------------------------------------------------------
+  # * item_to_loot_value
+  #--------------------------------------------------------------------------
+  def item_to_loot_value
+    item = @item_window.item
+    return if item.nil?
+    @item_active = false
+    slot = @item_window.inventory.slot(item)
+    type, id, n = slot.item_type, slot.item_id, @inpnum_window[0].number
+    sound_play('decision')
+    n.times {  $game_party.limit_inventory.remove_item (type, id, 1)
+               $game_temp.slots_to_discard.add_item(type, id, 1) }
+    @inpnum_window.each {|i| i.active = i.visible = false }
+    refresh
+  end
+  #--------------------------------------------------------------------------
+  # * loot_to_item
+  #--------------------------------------------------------------------------
+  def loot_to_item
+    item = @loot_window.item
+    return if item.nil?
+    slot = @loot_window.inventory.slot_reverse(item)
+    type, id, @number_item = slot.item_type, slot.item_id, slot.amount
+    sound_play('decision')
+    @inpnum_window.each {|i| i.active = i.visible = true }
+    @inpnum_window[0].number = @number_item
+    @loot_active = true
+  end
+  #--------------------------------------------------------------------------
+  # * loot_to_item_value
+  #--------------------------------------------------------------------------
+  def loot_to_item_value
+    item = @loot_window.item
+    return if item.nil?
+    @loot_active = false
+    slot = @loot_window.inventory.slot_reverse(item)
+    type, id, n = slot.item_type, slot.item_id, @inpnum_window[0].number
+    n.times {
+    oth = @item_window.inventory.slots[$game_party.limit_inventory.max_size-1]
+    oth = oth.nil? ? 0 : oth.amount
+    stack = item.is_a?(RPG::Item) ? $game_party.stack_item(item.id) : 1
+    slots = $game_party.limit_inventory.slots
+    limit_max = $game_party.limit_inventory.max_size
+    unless slots.size >= limit_max && oth >= stack
+      sound_play('decision')
+      $game_party.limit_inventory.add_item (type, id, 1) 
+      $game_temp.slots_to_discard.remove_item(type, id, 1)
+    else
+      sound_play('buzzer')
+    end }
+    @inpnum_window.each {|i| i.active = i.visible = false }
+    refresh
+  end
+end
+end
+
+$drg_inv_sys = true
